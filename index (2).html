@@ -1,375 +1,506 @@
-import { useState, useMemo, useCallback } from 'react';
-// Configuració de dades del codi de colors
-const colorData = {
-    "Negre": { B1: 0, B2: 0, M: 1, T: null, hex: "#333333", text: "text-white" },
-    "Marró": { B1: 1, B2: 1, M: 10, T: 1, hex: "#8B4513", text: "text-white" },
-    "Vermell": { B1: 2, B2: 2, M: 100, T: 2, hex: "#FF0000", text: "text-white" },
-    "Taronja": { B1: 3, B2: 3, M: 1000, T: null, hex: "#FFA500", text: "text-gray-900" },
-    "Groc": { B1: 4, B2: 4, M: 10000, T: null, hex: "#FFFF00", text: "text-gray-900" },
-    "Verd": { B1: 5, B2: 5, M: 100000, T: 0.5, hex: "#008000", text: "text-white" },
-    "Blau": { B1: 6, B2: 6, M: 1000000, T: 0.25, hex: "#0000FF", text: "text-white" },
-    "Violeta": { B1: 7, B2: 7, M: null, T: 0.1, hex: "#EE82EE", text: "text-gray-900" },
-    "Gris": { B1: 8, B2: 8, M: null, T: null, hex: "#808080", text: "text-white" },
-    "Blanc": { B1: 9, B2: 9, M: null, T: null, hex: "#FFFFFF", text: "text-gray-900" },
-    "Or": { B1: null, B2: null, M: 0.1, T: 5, hex: "#FFD700", text: "text-gray-900" },
-    "Plata": { B1: null, B2: null, M: 0.01, T: 10, hex: "#C0C0C0", text: "text-gray-900" },
-    "Sense color": { B1: null, B2: null, M: null, T: 20, hex: "#F5F5F5", text: "text-gray-700" } // Gris clar pel Sense color
-};
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Resistors 4 Bandes</title>
+    <!-- Càrrega de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configuració de la font Inter i personalització de Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Estils personalitzats per al Resistor */
+        .resistor-body {
+            height: 24px;
+            background-color: #f5f5f5;
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .resistor-band {
+            width: 12px;
+            height: 100%;
+            margin: 0 2px;
+            border-radius: 2px;
+            box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.3s;
+        }
+        .tolerance-spacer {
+            width: 16px; /* Espai més gran per separar la tolerància */
+            height: 100%;
+        }
+        select:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); /* Anell de focus blau */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans p-4 sm:p-8">
 
-// Colors disponibles per a cada banda
-const band1Colors = Object.keys(colorData).filter(c => colorData[c].B1 !== null && c !== "Negre"); // Banda 1 no pot ser Negre
-const band2Colors = Object.keys(colorData).filter(c => colorData[c].B2 !== null);
-const multiplierColors = Object.keys(colorData).filter(c => colorData[c].M !== null);
-const toleranceColors = Object.keys(colorData).filter(c => colorData[c].T !== null);
+    <div class="max-w-6xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">Calculadora de Resistors de 4 Bandes</h1>
+            <p class="text-lg text-gray-600">Converteix colors a valor ($\Omega$) i valor a colors.</p>
+        </header>
 
-/**
- * Funció per obtenir el nom del color donat el seu valor i tipus (B1, B2, M, T).
- * @param {number} value - El valor a buscar.
- * @param {string} type - El tipus de banda ("B1", "B2", "M", "T").
- * @returns {string|null} El nom del color o null si no es troba.
- */
-const getColorName = (value, type) => {
-    // Tolerància necessita un tractament especial per la precisió de flotant
-    if (type === 'T') {
-        const entry = Object.entries(colorData).find(([, data]) => Math.abs(data.T - value) < 0.001);
-        return entry ? entry[0] : null;
-    }
-    const entry = Object.entries(colorData).find(([, data]) => data[type] === value);
-    return entry ? entry[0] : null;
-};
-
-/**
- * Funció per convertir un valor de resistència a una unitat més legible (kΩ, MΩ).
- * @param {number} ohms - El valor en Ohms.
- * @returns {string} El valor formatejat amb la unitat adequada.
- */
-const formatOhms = (ohms) => {
-    if (ohms >= 1000000) {
-        return `${(ohms / 1000000).toFixed(2)} MΩ`;
-    } else if (ohms >= 1000) {
-        return `${(ohms / 1000).toFixed(2)} kΩ`;
-    } else {
-        return `${ohms.toFixed(2)} Ω`;
-    }
-};
-
-// Component de visualització del Resistor
-const ResistorView = ({ band1, band2, multiplier, tolerance }) => {
-    // Estils per les bandes
-    const bandStyle = (colorName) => ({
-        backgroundColor: colorData[colorName]?.hex || '#cccccc',
-        height: '100%',
-        width: '12px',
-        margin: colorName === 'Sense color' ? '0 1px' : '0 2px',
-        borderRadius: '2px',
-        boxShadow: 'inset 0 0 2px rgba(0,0,0,0.3)'
-    });
-
-    return (
-        <div className="flex justify-center items-center py-4">
-            <div className="flex items-center">
-                {/* Cos del resistor */}
-                <div className="w-16 h-4 bg-gray-300 rounded-l-full shadow-inner"></div>
-
-                {/* Bandes */}
-                <div className="flex h-6 items-center bg-gray-300">
-                    <div style={bandStyle(band1)} className="banda-1 ml-2"></div>
-                    <div style={bandStyle(band2)} className="banda-2"></div>
-                    <div style={bandStyle(multiplier)} className="banda-3"></div>
-                    
-                    {/* Espai de separació de tolerància */}
-                    <div className="w-4 h-6"></div> 
-                    
-                    <div style={bandStyle(tolerance)} className="banda-4 mr-2"></div>
+        <main class="space-y-12">
+            
+            <!-- === MODE 1: Colors a Valor (Bandes a Resultat) === -->
+            <section id="colors-to-value" class="bg-white p-6 md:p-10 rounded-2xl shadow-xl border-t-4 border-blue-600">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">1. Colors a Valor Nominal ($\Omega$, Tolerància, Mín/Màx)</h2>
+                
+                <!-- Visualització del Resistor (Bandas) -->
+                <div class="flex justify-center items-center py-6">
+                    <div class="flex items-center">
+                        <div class="w-16 resistor-body rounded-l-full"></div>
+                        <div class="flex resistor-body">
+                            <div id="resistor-band1" class="resistor-band ml-4"></div>
+                            <div id="resistor-band2" class="resistor-band"></div>
+                            <div id="resistor-band3" class="resistor-band"></div>
+                            <div class="tolerance-spacer"></div>
+                            <div id="resistor-band4" class="resistor-band mr-4"></div>
+                        </div>
+                        <div class="w-16 resistor-body rounded-r-full"></div>
+                    </div>
                 </div>
 
-                {/* Cos del resistor */}
-                <div className="w-16 h-4 bg-gray-300 rounded-r-full shadow-inner"></div>
-            </div>
-        </div>
-    );
-};
+                <!-- Controls de Selecció de Colors -->
+                <div class="flex flex-wrap -mx-2 mb-8">
+                    <div class="flex flex-col mb-4 w-full sm:w-1/4 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700">Banda 1 (1r Dígit)</label>
+                        <select id="select-band1" class="p-2 border rounded-lg shadow-sm focus:border-blue-500"></select>
+                    </div>
+                    <div class="flex flex-col mb-4 w-full sm:w-1/4 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700">Banda 2 (2n Dígit)</label>
+                        <select id="select-band2" class="p-2 border rounded-lg shadow-sm focus:border-blue-500"></select>
+                    </div>
+                    <div class="flex flex-col mb-4 w-full sm:w-1/4 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700">Banda 3 (Multiplicador)</label>
+                        <select id="select-band3" class="p-2 border rounded-lg shadow-sm focus:border-blue-500"></select>
+                    </div>
+                    <div class="flex flex-col mb-4 w-full sm:w-1/4 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700">Banda 4 (Tolerància)</label>
+                        <select id="select-band4" class="p-2 border rounded-lg shadow-sm focus:border-blue-500"></select>
+                    </div>
+                </div>
 
+                <!-- Resultats -->
+                <div id="result-colors-to-value" class="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <p class="text-center text-gray-500">Selecciona els colors per veure el resultat.</p>
+                </div>
+            </section>
 
-// Component principal de l'aplicació
-export default function App() {
-    // === 1. Colors a Valor (Mode 1) ===
-    const [c_band1, setCBand1] = useState(band1Colors[0]);
-    const [c_band2, setCBand2] = useState(band2Colors[0]);
-    const [c_mult, setCMult] = useState("Vermell");
-    const [c_tol, setCTol] = useState("Or");
-
-    const calculateFromColors = useMemo(() => {
-        const D1 = colorData[c_band1]?.B1;
-        const D2 = colorData[c_band2]?.B2;
-        const M = colorData[c_mult]?.M;
-        const T = colorData[c_tol]?.T;
-
-        if (D1 === null || D2 === null || M === null || T === null) {
-            return { error: "Selecció de color invàlida." };
-        }
-
-        const nominalValue = (D1 * 10 + D2) * M;
-        const tolerancePercentage = T / 100;
-        const toleranceValue = nominalValue * tolerancePercentage;
-        
-        const minValue = nominalValue - toleranceValue;
-        const maxValue = nominalValue + toleranceValue;
-
-        return {
-            nominal: nominalValue,
-            tolerance: T,
-            min: minValue,
-            max: maxValue,
-            // Per la visualització del resistor
-            band1: c_band1,
-            band2: c_band2,
-            multiplier: c_mult,
-            toleranceColor: c_tol
-        };
-    }, [c_band1, c_band2, c_mult, c_tol]);
-
-    // === 2. Valor a Colors (Mode 2) ===
-    const [v_value, setVValue] = useState(3200);
-    const [v_tol, setVTol] = useState(5);
-    const [v_error, setVError] = useState('');
-
-    const calculateFromValue = useCallback((value, tolerance) => {
-        setVError('');
-        const V = parseFloat(value);
-        const T = parseFloat(tolerance);
-
-        if (isNaN(V) || V <= 0 || isNaN(T) || T <= 0) {
-            setVError("Si us plau, introdueix valors vàlids i positius per al valor i la tolerància.");
-            return null;
-        }
-
-        // 1. Cercar el color de tolerància
-        const toleranceColor = getColorName(T, 'T');
-        if (!toleranceColor) {
-            setVError(`La tolerància del ${T}% no és un valor estàndard per a resistors de 4 bandes.`);
-            return null;
-        }
-
-        // 2. Determinar Bands 1, 2 i Multiplicador
-        let magnitude = 0;
-        let v_shifted = V;
-
-        // Bucle per trobar l'escala (multiplicador)
-        // L'objectiu és tenir un valor entre 1.0 i 99.99... (però amb dos decimals significatius exactes)
-        // Si el valor és 3200, volem 32 (D1=3, D2=2). L'escala és 100.
-        // Si el valor és 0.47, volem 47 (D1=4, D2=7). L'escala és 0.01.
-        
-        // Normalitzar el valor a la seva notació científica (base 10)
-        magnitude = Math.floor(Math.log10(v_shifted));
-        // Si el valor és 0.00x, log10(V) serà negatiu (ex: log10(0.0032) = -2.49)
-        // La magnitud ha de ser l'exponent de 10.
-        
-        // Calculem quina potència de 10 ens cal per obtenir un nombre de 2 dígits significatius
-        let twoSigFigs = V;
-        let exponent = 0;
-
-        // Desplacem el punt fins que el nombre estigui entre 1 i 99.9...
-        if (V >= 10) {
-            // Per 3200: 320.0 (exp 10), 32.0 (exp 100) -> 2 desplaçaments. Exp = 2.
-            while (twoSigFigs >= 100) {
-                twoSigFigs /= 10;
-                exponent++;
-            }
-        } else if (V < 1) {
-            // Per 0.47: 4.7 (exp 0.1), 47.0 (exp 0.01) -> 2 desplaçaments negatius. Exp = -2.
-            while (twoSigFigs < 10) {
-                twoSigFigs *= 10;
-                exponent--;
-            }
-            // Ara tenim un nombre entre 10 i 99.9 (ex: 47.0), però l'exponent és incorrecte
-            // Cal fer un desplaçament més per obtenir dos dígits (ex: 47 -> 4.7 * 10^1)
-            twoSigFigs /= 10;
-            exponent++;
-        }
-        
-        // Ajust final per assegurar dos dígits: 
-        // 3200 -> 32.0 * 10^2
-        // 4.7 -> 4.7 * 10^0  -> NO, hauria de ser 47 * 10^-1
-        // 0.47 -> 4.7 * 10^-1 -> NO, hauria de ser 47 * 10^-2
-        
-        // Multiplicar per 10 per tenir els dos dígits
-        let sigDigits = Math.round(V / (10 ** (exponent - 1)));
-        
-        // D1 i D2 són els dos primers dígits
-        let D1_val = Math.floor(sigDigits / 10);
-        let D2_val = sigDigits % 10;
-        
-        // L'exponent correcte del multiplicador:
-        let multiplierExponent = exponent - 1;
-
-        // Comprovem si el valor generat (D1*10+D2) * 10^M és el mateix que V,
-        // ja que la calculadora només pot expressar 2 dígits significatius.
-        const calculatedV = sigDigits * (10 ** multiplierExponent);
-        if (Math.abs(calculatedV - V) > 0.001 * V) {
-            setVError(`El valor nominal de ${formatOhms(V)} no es pot representar amb exactitud amb només 2 bandes significatives i els multiplicadors estàndard. La representació més propera és ${formatOhms(calculatedV)}.`);
-            // No retornem null, però mostrem l'error i el valor aproximat
-        }
-        
-        // 3. Cercar colors Band 1, Band 2 i Multiplier
-        const band1Color = getColorName(D1_val, 'B1');
-        const band2Color = getColorName(D2_val, 'B2');
-        
-        // Mapejar l'exponent al multiplicador (10^M)
-        const multiplierValue = 10 ** multiplierExponent;
-        const multiplierColor = getColorName(multiplierValue, 'M');
-
-        if (!band1Color || !band2Color || !multiplierColor) {
-            setVError("Error intern en el mapatge de colors.");
-            return null;
-        }
-
-        return {
-            band1: band1Color,
-            band2: band2Color,
-            multiplier: multiplierColor,
-            toleranceColor: toleranceColor,
-            D1_val: D1_val,
-            D2_val: D2_val,
-            M_exp: multiplierExponent
-        };
-    }, []);
-
-    // Càlcul inicial i memoitzat
-    const calculatedFromValue = useMemo(() => {
-        return calculateFromValue(v_value, v_tol);
-    }, [v_value, v_tol, calculateFromValue]);
-
-    // Component Dropdown reutilitzable
-    const ColorDropdown = ({ label, color, setter, availableColors }) => (
-        <div className="flex flex-col mb-4 w-full sm:w-1/4 px-2">
-            <label className="text-sm font-medium mb-1 text-gray-700">{label}</label>
-            <select
-                value={color}
-                onChange={(e) => setter(e.target.value)}
-                className={`p-2 border rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 ${colorData[color]?.text || 'text-gray-900'}`}
-                style={{ backgroundColor: colorData[color]?.hex || '#ffffff' }}
-            >
-                {availableColors.map(c => (
-                    <option key={c} value={c}
-                        style={{ backgroundColor: colorData[c]?.hex, color: colorData[c]?.text === 'text-white' ? 'white' : 'black' }}>
-                        {c}
-                    </option>
-                ))}
-            </select>
-        </div>
-    );
-
-    return (
-        <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
-            <header className="text-center mb-8">
-                <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Calculadora de Resistors de 4 Bandes</h1>
-                <p className="text-lg text-gray-600">Calcula el valor nominal i la tolerància a partir dels colors, i viceversa.</p>
-            </header>
-
-            <main className="max-w-6xl mx-auto space-y-12">
+            <!-- === MODE 2: Valor a Colors (Valor a Bandes) === -->
+            <section id="value-to-colors" class="bg-white p-6 md:p-10 rounded-2xl shadow-xl border-t-4 border-green-600">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">2. Valor Nominal a Colors (4 Bandes)</h2>
                 
-                {/* === MODE 1: Colors a Valor === */}
-                <section className="bg-white p-6 md:p-8 rounded-2xl shadow-xl border-t-4 border-blue-500">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">1. Colors a Valor $\rightarrow$ Valor Nominal</h2>
-                    
-                    {/* Visualització del Resistor */}
-                    <ResistorView 
-                        band1={calculateFromColors.band1} 
-                        band2={calculateFromColors.band2} 
-                        multiplier={calculateFromColors.multiplier} 
-                        tolerance={calculateFromColors.toleranceColor} 
-                    />
-
-                    {/* Controls de Selecció de Colors */}
-                    <div className="flex flex-wrap -mx-2 mb-6">
-                        <ColorDropdown label="Banda 1 (1r Dígit)" color={c_band1} setter={setCBand1} availableColors={band1Colors} />
-                        <ColorDropdown label="Banda 2 (2n Dígit)" color={c_band2} setter={setCBand2} availableColors={band2Colors} />
-                        <ColorDropdown label="Banda 3 (Multiplicador)" color={c_mult} setter={setCMult} availableColors={multiplierColors} />
-                        <ColorDropdown label="Banda 4 (Tolerància)" color={c_tol} setter={setCTol} availableColors={toleranceColors} />
+                <!-- Controls d'Entrada de Valor i Tolerància -->
+                <div class="flex flex-wrap -mx-2 mb-8">
+                    <div class="flex flex-col mb-4 w-full sm:w-1/2 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700" htmlFor="nominal-value-input">Valor Nominal ($\Omega$)</label>
+                        <input
+                            id="nominal-value-input"
+                            type="number"
+                            step="0.001"
+                            value="3200"
+                            min="0.01"
+                            class="p-2 border rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500"
+                        />
                     </div>
-
-                    {/* Resultats */}
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
-                        {calculateFromColors.error ? (
-                            <p className="text-red-600 font-semibold">{calculateFromColors.error}</p>
-                        ) : (
-                            <div className="space-y-2">
-                                <p className="text-xl font-bold text-blue-700">Valor Nominal (V): <span className="text-blue-900">{formatOhms(calculateFromColors.nominal)}</span></p>
-                                <p className="text-lg text-gray-800">Tolerància: <span className="font-semibold text-blue-600">$\pm{calculateFromColors.tolerance}\%$</span></p>
-                                <p className="text-md text-gray-600">Valor Mínim: <span className="font-medium text-gray-700">{formatOhms(calculateFromColors.min)}</span></p>
-                                <p className="text-md text-gray-600">Valor Màxim: <span className="font-medium text-gray-700">{formatOhms(calculateFromColors.max)}</span></p>
-                            </div>
-                        )}
+                    <div class="flex flex-col mb-4 w-full sm:w-1/2 px-2">
+                        <label class="text-sm font-medium mb-1 text-gray-700" htmlFor="tolerance-percent-input">Tolerància (%)</label>
+                        <select
+                            id="tolerance-percent-input"
+                            class="p-2 border rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500"
+                        >
+                            <option value="5" selected>5% (Or)</option>
+                            <option value="10">10% (Plata)</option>
+                            <option value="1">1% (Marró)</option>
+                            <option value="2">2% (Vermell)</option>
+                            <option value="0.5">0.5% (Verd)</option>
+                            <option value="0.25">0.25% (Blau)</option>
+                            <option value="0.1">0.1% (Violeta)</option>
+                            <option value="20">20% (Sense color)</option>
+                        </select>
                     </div>
-                </section>
+                </div>
 
-                {/* === MODE 2: Valor a Colors === */}
-                <section className="bg-white p-6 md:p-8 rounded-2xl shadow-xl border-t-4 border-green-500">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">2. Valor Nominal $\rightarrow$ Colors</h2>
-                    
-                    {/* Controls d'Entrada de Valor i Tolerància */}
-                    <div className="flex flex-wrap -mx-2 mb-6">
-                        <div className="flex flex-col mb-4 w-full sm:w-1/2 px-2">
-                            <label className="text-sm font-medium mb-1 text-gray-700" htmlFor="nominal-value">Valor Nominal (Ω)</label>
-                            <input
-                                id="nominal-value"
-                                type="number"
-                                step="0.001"
-                                value={v_value}
-                                onChange={(e) => setVValue(e.target.value)}
-                                className="p-2 border rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500"
-                            />
+                <!-- Resultats -->
+                <div id="result-value-to-colors" class="bg-green-50 p-4 rounded-xl border border-green-200">
+                    <p class="text-center text-gray-500">Introdueix un valor per veure els colors.</p>
+                </div>
+
+                 <!-- Visualització del Resistor (Valor a Colors) -->
+                 <div id="resistor-view-v2c" class="flex justify-center items-center py-6 mt-4 hidden">
+                    <div class="flex items-center">
+                        <div class="w-16 resistor-body rounded-l-full"></div>
+                        <div class="flex resistor-body">
+                            <div id="resistor-v2c-band1" class="resistor-band ml-4"></div>
+                            <div id="resistor-v2c-band2" class="resistor-band"></div>
+                            <div id="resistor-v2c-band3" class="resistor-band"></div>
+                            <div class="tolerance-spacer"></div>
+                            <div id="resistor-v2c-band4" class="resistor-band mr-4"></div>
                         </div>
-                        <div className="flex flex-col mb-4 w-full sm:w-1/2 px-2">
-                            <label className="text-sm font-medium mb-1 text-gray-700" htmlFor="tolerance-percent">Tolerància (%)</label>
-                            <select
-                                id="tolerance-percent"
-                                value={v_tol}
-                                onChange={(e) => setVTol(e.target.value)}
-                                className="p-2 border rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500"
-                            >
-                                {toleranceColors.map(c => (
-                                    <option key={c} value={colorData[c].T}>{colorData[c].T}% ({c})</option>
-                                ))}
-                            </select>
-                        </div>
+                        <div class="w-16 resistor-body rounded-r-full"></div>
                     </div>
+                </div>
 
-                    {/* Resultats del Càlcul de Colors */}
-                    <div className="bg-green-50 p-4 rounded-xl border border-green-200">
-                        {v_error && (
-                            <p className="text-red-600 font-semibold mb-3">{v_error}</p>
-                        )}
-                        {calculatedFromValue && (
-                            <>
-                                {/* Visualització del Resistor (Valor a Colors) */}
-                                <ResistorView 
-                                    band1={calculatedFromValue.band1} 
-                                    band2={calculatedFromValue.band2} 
-                                    multiplier={calculatedFromValue.multiplier} 
-                                    tolerance={calculatedFromValue.toleranceColor} 
-                                />
-                                
-                                <div className="space-y-2 pt-2">
-                                    <p className="text-xl font-bold text-green-700">Colors Resultants:</p>
-                                    <ul className="list-disc list-inside space-y-1 ml-4 text-gray-800">
-                                        <li><span className="font-semibold text-green-600">Banda 1: </span>{calculatedFromValue.band1} (Dígit {calculatedFromValue.D1_val})</li>
-                                        <li><span className="font-semibold text-green-600">Banda 2: </span>{calculatedFromValue.band2} (Dígit {calculatedFromValue.D2_val})</li>
-                                        <li><span className="font-semibold text-green-600">Banda 3 (Multiplicador): </span>{calculatedFromValue.multiplier} ($\times 10^{calculatedFromValue.M_exp}$)</li>
-                                        <li><span className="font-semibold text-green-600">Banda 4 (Tolerància): </span>{calculatedFromValue.toleranceColor} ($\pm{v_tol}\%$)</li>
-                                    </ul>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </section>
+            </section>
+        </main>
+        
+        <footer class="mt-10 text-center text-sm text-gray-500">
+            <p>Implementació pura en HTML/CSS/JavaScript. Compatible amb el codi de 4 bandes estàndard.</p>
+        </footer>
 
-            </main>
+    </div>
 
-            <footer className="mt-10 text-center text-sm text-gray-500">
-                <p>Dissenyat per a resistors de 4 bandes. Dades basades en la taula de codi de colors estàndard.</p>
-            </footer>
-        </div>
-    );
-}
+    <script>
+        // Taula de dades de colors segons l'estàndard de 4 bandes
+        const colorData = {
+            "Negre": { D1: 0, D2: 0, M: 1, T: null, hex: "#333333", text: "text-white" },
+            "Marró": { D1: 1, D2: 1, M: 10, T: 1, hex: "#8B4513", text: "text-white" },
+            "Vermell": { D1: 2, D2: 2, M: 100, T: 2, hex: "#FF0000", text: "text-white" },
+            "Taronja": { D1: 3, D2: 3, M: 1000, T: null, hex: "#FFA500", text: "text-gray-900" },
+            "Groc": { D1: 4, D2: 4, M: 10000, T: null, hex: "#FFFF00", text: "text-gray-900" },
+            "Verd": { D1: 5, D2: 5, M: 100000, T: 0.5, hex: "#008000", text: "text-white" },
+            "Blau": { D1: 6, D2: 6, M: 1000000, T: 0.25, hex: "#0000FF", text: "text-white" },
+            "Violeta": { D1: 7, D2: 7, M: null, T: 0.1, hex: "#EE82EE", text: "text-gray-900" },
+            "Gris": { D1: 8, D2: 8, M: null, T: null, hex: "#808080", text: "text-white" },
+            "Blanc": { D1: 9, D2: 9, M: null, T: null, hex: "#FFFFFF", text: "text-gray-900" },
+            "Or": { D1: null, D2: null, M: 0.1, T: 5, hex: "#FFD700", text: "text-gray-900" },
+            "Plata": { D1: null, D2: null, M: 0.01, T: 10, hex: "#C0C0C0", text: "text-gray-900" },
+            "Sense color": { D1: null, D2: null, M: null, T: 20, hex: "#F5F5F5", text: "text-gray-700" } 
+        };
+
+        // Colors disponibles per a cada banda (filtrats per les regles del codi)
+        const band1Colors = Object.keys(colorData).filter(c => colorData[c].D1 !== null && c !== "Negre"); // No Negre
+        const band2Colors = Object.keys(colorData).filter(c => colorData[c].D2 !== null);
+        const multiplierColors = Object.keys(colorData).filter(c => colorData[c].M !== null);
+        const toleranceColors = Object.keys(colorData).filter(c => colorData[c].T !== null);
+
+        // Elements del DOM
+        const selectors = {
+            band1: document.getElementById('select-band1'),
+            band2: document.getElementById('select-band2'),
+            mult: document.getElementById('select-band3'),
+            tol: document.getElementById('select-band4'),
+            // Elements de visualització del Resistor 1
+            band1View: document.getElementById('resistor-band1'),
+            band2View: document.getElementById('resistor-band2'),
+            multView: document.getElementById('resistor-band3'),
+            tolView: document.getElementById('resistor-band4'),
+            resultView: document.getElementById('result-colors-to-value'),
+
+            // Elements del Mode 2: Valor a Colors
+            valueInput: document.getElementById('nominal-value-input'),
+            toleranceInput: document.getElementById('tolerance-percent-input'),
+            resultViewV2C: document.getElementById('result-value-to-colors'),
+            resistorViewV2CContainer: document.getElementById('resistor-view-v2c'),
+            band1ViewV2C: document.getElementById('resistor-v2c-band1'),
+            band2ViewV2C: document.getElementById('resistor-v2c-band2'),
+            multViewV2C: document.getElementById('resistor-v2c-band3'),
+            tolViewV2C: document.getElementById('resistor-v2c-band4'),
+        };
+
+        /**
+         * Omple un selector amb les opcions de colors.
+         * @param {HTMLElement} selectElement - L'element <select> a omplir.
+         * @param {string[]} availableColors - Array de noms de colors.
+         * @param {string} initialColor - Color per defecte.
+         */
+        function populateSelector(selectElement, availableColors, initialColor) {
+            selectElement.innerHTML = '';
+            availableColors.forEach(colorName => {
+                const option = document.createElement('option');
+                option.value = colorName;
+                option.textContent = colorName;
+                if (colorName === initialColor) {
+                    option.selected = true;
+                }
+                // Ajustar l'estil de l'opció per visibilitat
+                option.style.backgroundColor = colorData[colorName].hex;
+                option.style.color = colorData[colorName].text === 'text-white' ? 'white' : 'black';
+                selectElement.appendChild(option);
+            });
+        }
+
+        /**
+         * Actualitza l'estil de la banda del resistor.
+         * @param {HTMLElement} bandElement - L'element div que representa la banda.
+         * @param {string} colorName - El nom del color.
+         */
+        function updateBandStyle(bandElement, colorName) {
+            const hex = colorData[colorName]?.hex || '#cccccc';
+            bandElement.style.backgroundColor = hex;
+        }
+
+        /**
+         * Converteix un valor en Ohms a una cadena formatada (kΩ, MΩ).
+         * @param {number} ohms - El valor en Ohms.
+         * @returns {string} El valor formatejat amb la unitat.
+         */
+        function formatOhms(ohms) {
+            if (isNaN(ohms)) return "Valor Invàlid";
+            if (ohms >= 1000000) {
+                return `${(ohms / 1000000).toFixed(3)} MΩ`;
+            } else if (ohms >= 1000) {
+                return `${(ohms / 1000).toFixed(3)} kΩ`;
+            } else {
+                return `${ohms.toFixed(3)} Ω`;
+            }
+        }
+        
+        // ==========================================================
+        // === MODE 1: Colors a Valor ===
+        // ==========================================================
+
+        /**
+         * Calcula el valor nominal, tolerància i rang a partir dels colors seleccionats.
+         */
+        function calculateFromColors() {
+            const B1_name = selectors.band1.value;
+            const B2_name = selectors.band2.value;
+            const M_name = selectors.mult.value;
+            const T_name = selectors.tol.value;
+
+            const D1 = colorData[B1_name]?.D1;
+            const D2 = colorData[B2_name]?.D2;
+            const M = colorData[M_name]?.M;
+            const T = colorData[T_name]?.T;
+
+            // Actualitzar la visualització
+            updateBandStyle(selectors.band1View, B1_name);
+            updateBandStyle(selectors.band2View, B2_name);
+            updateBandStyle(selectors.multView, M_name);
+            updateBandStyle(selectors.tolView, T_name);
+
+            if (D1 === null || D2 === null || M === null || T === null) {
+                selectors.resultView.innerHTML = `
+                    <p class="text-red-600 font-semibold text-center">
+                        Selecció de color invàlida per a una de les bandes.
+                    </p>
+                `;
+                return;
+            }
+
+            const nominalValue = (D1 * 10 + D2) * M;
+            const tolerancePercentage = T / 100;
+            const toleranceValue = nominalValue * tolerancePercentage;
+            
+            const minValue = nominalValue - toleranceValue;
+            const maxValue = nominalValue + toleranceValue;
+
+            selectors.resultView.innerHTML = `
+                <div class="space-y-2">
+                    <p class="text-xl font-bold text-blue-700">Valor Nominal (V): <span class="text-blue-900">${formatOhms(nominalValue)}</span></p>
+                    <p class="text-lg text-gray-800">Tolerància: <span class="font-semibold text-blue-600">$\\pm${T}\\%$ (${T_name})</span></p>
+                    <p class="text-md text-gray-600">Valor Mínim: <span class="font-medium text-gray-700">${formatOhms(minValue)}</span></p>
+                    <p class="text-md text-gray-600">Valor Màxim: <span class="font-medium text-gray-700">${formatOhms(maxValue)}</span></p>
+                </div>
+            `;
+        }
+
+
+        // ==========================================================
+        // === MODE 2: Valor a Colors ===
+        // ==========================================================
+
+        /**
+         * Funció per obtenir el nom del color donat el seu valor i tipus (D1, D2, M, T).
+         * @param {number} value - El valor a buscar.
+         * @param {string} type - El tipus de banda ("D1", "D2", "M", "T").
+         * @returns {string|null} El nom del color o null si no es troba.
+         */
+        function getColorName(value, type) {
+            // Tolerància i Multiplicador necessiten precisió o coincideixença exacta
+            for (const [color, data] of Object.entries(colorData)) {
+                if (type === 'T') {
+                     // Comparació amb tolerància, permetent una petita tolerància en flotant
+                    if (data.T !== null && Math.abs(data.T - value) < 0.001) {
+                        return color;
+                    }
+                } else if (type === 'M') {
+                    // Comparació amb multiplicador (pot ser flotant)
+                    if (data.M !== null && Math.abs(data.M - value) < 0.000001) {
+                        return color;
+                    }
+                } else if (data[type] === value) {
+                    return color;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Calcula els 4 colors a partir d'un valor nominal i una tolerància.
+         */
+        function calculateFromValue() {
+            const V_raw = selectors.valueInput.value;
+            const T_raw = selectors.toleranceInput.value;
+            
+            const V = parseFloat(V_raw);
+            const T = parseFloat(T_raw);
+
+            // Amagar la vista del resistor per defecte
+            selectors.resistorViewV2CContainer.classList.add('hidden');
+            
+            if (isNaN(V) || V <= 0 || isNaN(T) || T <= 0) {
+                selectors.resultViewV2C.innerHTML = `
+                    <p class="text-red-600 font-semibold text-center">
+                        Si us plau, introdueix valors nominals i de tolerància vàlids i positius.
+                    </p>
+                `;
+                return;
+            }
+
+            // 1. Cercar el color de tolerància
+            const toleranceColor = getColorName(T, 'T');
+
+            if (!toleranceColor) {
+                selectors.resultViewV2C.innerHTML = `
+                    <p class="text-red-600 font-semibold text-center">
+                        La tolerància del ${T}% no és un valor estàndard o no està disponible per a resistors de 4 bandes.
+                    </p>
+                `;
+                return;
+            }
+
+            // 2. Determinar Bandes 1, 2 i Multiplicador (Basat en 2 dígits significatius)
+            
+            let significantDigits = V;
+            let exponent = 0; // Exponent per la potència de 10
+
+            // Ajustar el valor per trobar la potència de 10
+            if (V >= 100) {
+                // Ex: 3200 -> 32.0 (exponent 2)
+                while (significantDigits >= 10) {
+                    significantDigits /= 10;
+                    exponent++;
+                }
+                // Si significantDigits és 3.20 (3.2 * 10^3), necessitem que el multiplicador sigui 10^2
+                // per deixar 32 (32 * 10^2).
+                
+                // Finalment ajustem a dos dígits significatius (32 en l'exemple de 3200)
+                significantDigits *= 10;
+                exponent--;
+
+            } else if (V < 10) {
+                // Ex: 0.47 -> 4.7 (exponent -1)
+                while (significantDigits < 10 && significantDigits > 0) {
+                    significantDigits *= 10;
+                    exponent--;
+                }
+                // Si significantDigits és 4.7 (4.7 * 10^-1), necessitem 47 (47 * 10^-2)
+                significantDigits *= 10;
+                exponent--;
+                
+            }
+            // En qualsevol cas, arrodonim i treballem amb la part entera (32, 47, etc.)
+            let D1D2 = Math.round(V / (10 ** (exponent - 1)));
+            
+            // Reajustar l'exponent
+            let multiplierExponent = exponent - 1;
+            
+            // Comprovació d'un sol dígit (e.g. 5, on hauria de ser 50)
+            if (D1D2 < 10 && V >= 1) { 
+                D1D2 *= 10;
+                multiplierExponent--;
+            } else if (D1D2 < 10 && V < 1 && V * 10 >= 1 && V * 10 < 10) {
+                 // Ex: V=0.3. D1D2 ha de ser 30. (No 3.0)
+                 D1D2 *= 10;
+                 multiplierExponent--;
+            }
+
+            // Separar dígits i calcular el multiplicador final
+            let D1_val = Math.floor(D1D2 / 10);
+            let D2_val = D1D2 % 10;
+            const multiplierValue = Math.pow(10, multiplierExponent);
+
+            // Comprovació d'error d'aproximació
+            const calculatedV = D1D2 * multiplierValue;
+            let errorHtml = '';
+            if (Math.abs(calculatedV - V) > 0.001 * V) {
+                errorHtml = `
+                    <p class="text-red-600 font-semibold mb-3">
+                        ⚠️ Avís: El valor de ${formatOhms(V)} no es pot representar exactament amb 2 bandes. 
+                        La representació amb colors (${D1_val}${D2_val} $\\times 10^{multiplierExponent}$) és ${formatOhms(calculatedV)}.
+                    </p>
+                `;
+            }
+
+            // 3. Cercar colors Band 1, Band 2 i Multiplier
+            const band1Color = getColorName(D1_val, 'D1');
+            const band2Color = getColorName(D2_val, 'D2');
+            const multiplierColor = getColorName(multiplierValue, 'M');
+
+            if (!band1Color || !band2Color || !multiplierColor) {
+                 selectors.resultViewV2C.innerHTML = `
+                    <p class="text-red-600 font-semibold text-center">
+                        Error en el mapatge de colors. Revisa el valor nominal.
+                    </p>
+                `;
+                return;
+            }
+
+            // Mostrar el resistor
+            selectors.resistorViewV2CContainer.classList.remove('hidden');
+            updateBandStyle(selectors.band1ViewV2C, band1Color);
+            updateBandStyle(selectors.band2ViewV2C, band2Color);
+            updateBandStyle(selectors.multViewV2C, multiplierColor);
+            updateBandStyle(selectors.tolViewV2C, toleranceColor);
+
+            // Mostrar els resultats
+            selectors.resultViewV2C.innerHTML = `
+                ${errorHtml}
+                <div class="space-y-2 pt-2">
+                    <p class="text-xl font-bold text-green-700">Colors Resultants:</p>
+                    <ul class="list-disc list-inside space-y-1 ml-4 text-gray-800">
+                        <li><span class="font-semibold text-green-600">Banda 1 (1r Dígit): </span>${band1Color} (${D1_val})</li>
+                        <li><span class="font-semibold text-green-600">Banda 2 (2n Dígit): </span>${band2Color} (${D2_val})</li>
+                        <li><span class="font-semibold text-green-600">Banda 3 (Multiplicador): </span>${multiplierColor} ($\times ${multiplierValue}$)</li>
+                        <li><span class="font-semibold text-green-600">Banda 4 (Tolerància): </span>${toleranceColor} ($\pm${T}\%$)</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        // ==========================================================
+        // === Inicialització i Listeners ===
+        // ==========================================================
+
+        window.onload = function() {
+            // 1. Inicialitzar selectors del MODE 1 (Colors a Valor)
+            populateSelector(selectors.band1, band1Colors, "Marró");
+            populateSelector(selectors.band2, band2Colors, "Vermell");
+            populateSelector(selectors.mult, multiplierColors, "Vermell");
+            populateSelector(selectors.tol, toleranceColors, "Or");
+
+            // Afegir listeners per al MODE 1
+            selectors.band1.addEventListener('change', calculateFromColors);
+            selectors.band2.addEventListener('change', calculateFromColors);
+            selectors.mult.addEventListener('change', calculateFromColors);
+            selectors.tol.addEventListener('change', calculateFromColors);
+
+            // Executar el càlcul inicial
+            calculateFromColors();
+
+
+            // 2. Inicialitzar listeners per al MODE 2 (Valor a Colors)
+            selectors.valueInput.addEventListener('input', calculateFromValue);
+            selectors.toleranceInput.addEventListener('change', calculateFromValue);
+            
+            // Executar el càlcul inicial
+            calculateFromValue();
+        };
+
+    </script>
+</body>
+</html>
